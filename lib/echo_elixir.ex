@@ -130,4 +130,91 @@ defmodule Echo do
         forced_leak()
     end
   end
+
+  defmodule Ring do
+    @moduledoc """
+    On my machine, it should have atleast 3 processes to avoid
+    race conditions. Maybe there's a better way to do this but can't find
+    at the moment
+
+    I have 2 ways on my mind rigt now on how to solve this:
+    1. "Bubbling" - let the message propagate all the way up to the initial
+       process. The trade off is you have to pass a message to all spawned
+       processes and check if it has a parent.
+
+    2. passing the initial process to all spawned processes. Each sub-process
+       gets a copy of the initial proc's PID. Trade off here is each process
+       gets a copy of a thing that they might not need unless the process
+       is the last one that was spawned
+    """
+
+    def start(m, n, message) do
+      pid = spawn(__MODULE__, :loop, [nil, nil])
+      IO.inspect "Initial pid: "
+      IO.inspect pid
+      send(pid, {:start_kid, pid, n - 1, message})
+      send(pid, {:new_msg, m - 1, message})
+      pid
+    end
+
+    def loop(ppid, kpid) do
+      receive do
+        {:start_kid, parent_pid, 1, message} ->
+          pid = spawn(__MODULE__, :loop, [parent_pid, nil])
+          IO.puts "-------------------------"
+          IO.inspect "Starting last process!"
+          IO.inspect pid
+          IO.puts "-------------------------"
+          loop(ppid, nil)
+        {:start_kid, parent_pid, n, message} ->
+          pid = spawn(__MODULE__, :loop, [parent_pid, nil])
+          send(pid, {:start_kid, pid, n - 1, message})
+          IO.puts "-------------------------"
+          IO.inspect "Initializing kid process..."
+          IO.inspect pid
+          IO.puts "-------------------------"
+          loop(ppid, pid)
+        {:new_msg, 0, message} ->
+          IO.puts "-------------------------"
+          IO.inspect message
+          IO.inspect "DONE!"
+          IO.puts "-------------------------"
+          loop(ppid, kpid)
+        {:new_msg, m, message} ->
+          case kpid == nil do
+            true ->
+              IO.puts "-------------------------"
+              IO.inspect "I have no spawned process: "
+              IO.inspect self()
+              IO.puts "-------------------------"
+              send(ppid, {:find_parent, :new_msg, m, message})
+              loop(ppid, kpid)
+            false ->
+              IO.puts "-------------------------"
+              IO.inspect "Receiver: "
+              IO.inspect kpid
+              IO.inspect "received message: #{message}"
+              IO.inspect "message count: #{m}"
+              IO.puts "-------------------------"
+              send(kpid, {:new_msg, m - 1, message})
+              loop(ppid, kpid)
+          end
+        {:find_parent, :new_msg, m, message} ->
+          case ppid == nil do
+            true ->
+              IO.puts "-------------------------"
+              IO.inspect "Initial received message: #{message}"
+              IO.inspect self()
+              IO.puts "-------------------------"
+              send(kpid, {:new_msg, m - 1, message})
+              loop(ppid, kpid)
+            false ->
+              send(ppid, {:find_parent, :new_msg, m, message})
+              loop(ppid, kpid)
+          end
+        :stop ->
+          Process.exit(self(), :stop)
+      end
+    end
+  end
 end
