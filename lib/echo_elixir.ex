@@ -131,6 +131,38 @@ defmodule Echo do
     end
   end
 
+  defmodule Echo do
+    @moduledoc false
+
+    @doc """
+    If `start` is called more than once, you could end up with dangling processes
+    """
+    def start do
+      pid = spawn(__MODULE__, :loop, [])
+      IO.inspect pid
+      Process.register(pid, :ecko)
+    end
+
+    def print(msg) do
+      send(:ecko, {:print, msg})
+    end
+
+    def stop do
+      send(:ecko, :stop)
+      :ok
+    end
+
+    def loop do
+      receive do
+        {:print, msg} ->
+          IO.inspect msg
+          loop()
+        :stop ->
+          Process.exit(self(), :normal)
+      end
+    end
+  end
+
   defmodule Ring do
     @moduledoc """
     On my machine, it should have atleast 3 processes to avoid
